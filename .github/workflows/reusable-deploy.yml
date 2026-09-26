@@ -2,6 +2,10 @@ name: Reusable build and deploy
 
 # Собирает образ, публикует в ghcr.io встроенным GITHUB_TOKEN и разворачивает
 # его на VPS по SSH. Community Server через этот workflow не деплоится.
+#
+# Окружения (environment) намеренно не используются: в приватных репозиториях
+# они доступны только на платных тарифах, поэтому все параметры деплоя берутся
+# из переменных и секретов уровня репозитория.
 
 on:
   workflow_call:
@@ -26,7 +30,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -86,7 +89,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
             set -euo pipefail
             cd "$DEPLOY_PATH"
-            # Сохраняем текущий тег для откита
+            # Сохраняем текущий тег для отката
             previous="\$(docker compose -f "$COMPOSE_FILE" config --images | grep "$SERVICE" || true)"
             echo "\$previous" > ".previous-$SERVICE" || true
             export ${SERVICE^^}_IMAGE="$IMAGE"

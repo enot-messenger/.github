@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# Запрещает прямой push в main: изменения идут только через ветку и pull request.
+#
+# Включается один раз в каждом клоне:
+#   git config core.hooksPath .githooks
+#   chmod +x .githooks/pre-push
+#
+# Обойти осознанно (например, при восстановлении после аварии):
+#   git push --no-verify
+
+protected_branch="main"
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    "refs/heads/$protected_branch")
+      echo "" >&2
+      echo "  Прямой push в $protected_branch запрещён." >&2
+      echo "  Создайте ветку (feat/*, fix/*, chore/*, docs/*) и pull request." >&2
+      echo "  Порядок: https://github.com/enot-messenger/.github/blob/main/CONTRIBUTING.md" >&2
+      echo "" >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0

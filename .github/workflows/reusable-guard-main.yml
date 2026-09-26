@@ -1,0 +1,71 @@
+name: Reusable guard main
+
+# Замена защите ветки main. На бесплатном тарифе protected branches и rulesets
+# в приватных репозиториях недоступны, поэтому запретить прямой push технически
+# нельзя. Этот workflow делает нарушение заметным: падает с ошибкой и заводит
+# issue, если коммит в main не связан ни с одним pull request.
+#
+# Локальную часть защиты выполняет хук .githooks/pre-push в каждом репозитории.
+
+on:
+  workflow_call:
+    inputs:
+      issue-label:
+        description: "Лейбл для issue о нарушении. Пустая строка — без лейбла."
+        type: string
+        default: "type:chore"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверить, что коммит пришёл из pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          ISSUE_LABEL: ${{ inputs.issue-label }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          pulls="$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            -H "Accept: application/vnd.github+json" --jq 'length' 2>/dev/null || echo 0)"
+
+          if [ "$pulls" -gt 0 ]; then
+            echo "Коммит $SHA связан с pull request — порядок соблюдён."
+            exit 0
+          fi
+
+          title="Прямой push в main: ${SHA:0:7}"
+          body=$(cat <<EOF
+          Коммит [\`${SHA:0:7}\`](${{ github.server_url }}/$REPO/commit/$SHA) попал в \`main\` без pull request.
+
+          Автор пуша: @$ACTOR
+          Запуск проверки: $RUN_URL
+
+          Почему это важно: процесс описан в [CONTRIBUTING.md](https://github.com/enot-messenger/.github/blob/main/CONTRIBUTING.md)
+          и в разделе «Грабли» [журнала проекта](https://github.com/enot-messenger/enot-docs/blob/main/docs/journal.md).
+          Защита ветки на бесплатном тарифе недоступна, поэтому правило держится на хуке \`.githooks/pre-push\` и на этой проверке.
+
+          Что сделать:
+          1. Убедиться, что \`git config core.hooksPath .githooks\` включён в вашем клоне.
+          2. Дальнейшие изменения вносить веткой и pull request.
+          3. Закрыть этот issue после проверки.
+          EOF
+          )
+
+          if [ -n "$ISSUE_LABEL" ]; then
+            gh issue create --repo "$REPO" --title "$title" --body "$body" --label "$ISSUE_LABEL" \
+              || gh issue create --repo "$REPO" --title "$title" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
+
+          echo "::error::Коммит $SHA попал в main без pull request"
+          exit 1

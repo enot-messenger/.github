@@ -1,0 +1,13 @@
+name: Guard main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    uses: enot-messenger/.github/.github/workflows/reusable-guard-main.yml@main
