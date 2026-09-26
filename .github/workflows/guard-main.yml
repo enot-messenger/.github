@@ -4,9 +4,12 @@ on:
   push:
     branches: [main]
 
+# pull-requests: read нужен сторожу, чтобы увидеть связанный с коммитом PR.
+# Вызываемый workflow не может получить прав больше, чем у вызывающего.
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   guard:
