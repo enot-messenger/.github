@@ -15,9 +15,12 @@ on:
         type: string
         default: "type:chore"
 
+# pull-requests: read обязателен: без него запрос связанных с коммитом PR
+# отвечает 403, и легальный squash-мердж выглядит как прямой push.
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   guard:
@@ -34,8 +37,19 @@ jobs:
         run: |
           set -uo pipefail
 
-          pulls="$(gh api "repos/$REPO/commits/$SHA/pulls" \
-            -H "Accept: application/vnd.github+json" --jq 'length' 2>/dev/null || echo 0)"
+          # Связь коммита с PR индексируется не мгновенно, поэтому несколько попыток.
+          pulls=0
+          for attempt in 1 2 3 4; do
+            response="$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              -H "Accept: application/vnd.github+json" --jq 'length' 2>&1)"
+            if [ "$response" -eq "$response" ] 2>/dev/null; then
+              pulls="$response"
+              [ "$pulls" -gt 0 ] && break
+            else
+              echo "::warning::Попытка $attempt: запрос связанных PR не удался: $response"
+            fi
+            [ "$attempt" -lt 4 ] && sleep $((attempt * 5))
+          done
 
           if [ "$pulls" -gt 0 ]; then
             echo "Коммит $SHA связан с pull request — порядок соблюдён."
