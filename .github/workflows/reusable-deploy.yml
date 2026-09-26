@@ -82,6 +82,10 @@ jobs:
             echo "::notice::Переменные DEPLOY_* не заданы — деплой пропущен"
             exit 0
           fi
+          # Имя переменной образа для compose: core-gateway -> CORE_GATEWAY_IMAGE.
+          # ${SERVICE^^} давал CORE-GATEWAY_IMAGE, а export с дефисом падает.
+          IMAGE_VAR="$(printf '%s' "$SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE"
+          echo "Переменная образа: $IMAGE_VAR"
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
@@ -90,9 +94,10 @@ jobs:
             set -euo pipefail
             cd "$DEPLOY_PATH"
             # Сохраняем текущий тег для отката
-            previous="\$(docker compose -f "$COMPOSE_FILE" config --images | grep "$SERVICE" || true)"
+            # Образ, который работает сейчас: нужен для честного отката
+            previous="\$(docker compose -f "$COMPOSE_FILE" ps --format '{{ .Image }}' "$SERVICE" | head -n 1 || true)"
             echo "\$previous" > ".previous-$SERVICE" || true
-            export ${SERVICE^^}_IMAGE="$IMAGE"
+            export $IMAGE_VAR="$IMAGE"
             docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
             docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE"
             # Health-check: ждём healthy до 90 секунд
@@ -103,7 +108,13 @@ jobs:
               sleep 3
             done
             echo "Health-check не пройден, откатываемся"
-            docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE" --force-recreate
+            if [ -n "\$previous" ]; then
+              export $IMAGE_VAR="\$previous"
+              docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE"
+              echo "Откат на \$previous выполнен"
+            else
+              echo "Предыдущий образ неизвестен, автоматический откат невозможен"
+            fi
             exit 1
           REMOTE
 
