@@ -1,0 +1,60 @@
+name: Reusable Node checks
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      package-manager:
+        type: string
+        default: "pnpm"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect package manifest
+        id: detect
+        run: |
+          if [ -f package.json ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::package.json ещё нет — проверки пропущены"
+          fi
+
+      - name: Enable corepack
+        if: steps.detect.outputs.found == 'true' && inputs.package-manager == 'pnpm'
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.found == 'true'
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+
+      - name: Install
+        if: steps.detect.outputs.found == 'true'
+        run: ${{ inputs.package-manager }} install --frozen-lockfile
+
+      - name: Lint
+        if: steps.detect.outputs.found == 'true'
+        run: ${{ inputs.package-manager }} run lint
+
+      - name: Types
+        if: steps.detect.outputs.found == 'true'
+        run: ${{ inputs.package-manager }} run typecheck
+
+      - name: Test
+        if: steps.detect.outputs.found == 'true'
+        run: ${{ inputs.package-manager }} run test
+
+      - name: Build
+        if: steps.detect.outputs.found == 'true'
+        run: ${{ inputs.package-manager }} run build

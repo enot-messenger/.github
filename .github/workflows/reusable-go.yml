@@ -1,0 +1,68 @@
+name: Reusable Go checks
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        type: string
+        default: "1.23"
+      working-directory:
+        type: string
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Go module
+        id: detect
+        run: |
+          if [ -f go.mod ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::go.mod ещё нет — проверки пропущены"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.detect.outputs.found == 'true'
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+
+      - name: Verify formatting
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          go install mvdan.cc/gofumpt@latest
+          unformatted="$(gofumpt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Файлы не отформатированы gofumpt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        if: steps.detect.outputs.found == 'true'
+        run: go build ./...
+
+      - name: Vet
+        if: steps.detect.outputs.found == 'true'
+        run: go vet ./...
+
+      - name: Test
+        if: steps.detect.outputs.found == 'true'
+        run: go test ./... -race -count=1 -coverprofile=coverage.out
+
+      - name: Lint
+        if: steps.detect.outputs.found == 'true'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: ${{ inputs.working-directory }}

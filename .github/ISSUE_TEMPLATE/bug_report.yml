@@ -1,0 +1,53 @@
+name: Баг
+description: Что-то работает не так, как ожидалось
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Не сообщайте об уязвимостях здесь — используйте порядок из SECURITY.md. В примерах используйте только вымышленные данные."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options: ["client", "backend", "media", "infra", "community-server", "admin"]
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидали
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что произошло
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: |
+        1. Войти как user@example.com
+        2. Открыть сообщество example.enot.space
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия или коммит
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Окружение
+      placeholder: "Платформа, ОС, браузер или сборка, регион"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи
+      description: "Уберите токены, адреса и персональные данные."
+      render: text

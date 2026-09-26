@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Уязвимость безопасности
+    url: https://github.com/enot-messenger/.github/blob/main/SECURITY.md
+    about: Не создавайте публичный issue — используйте приватный канал сообщения.
+  - name: Требования и документация
+    url: https://github.com/enot-messenger/enot-docs
+    about: Техническое задание, журнал проекта и правила разработки.

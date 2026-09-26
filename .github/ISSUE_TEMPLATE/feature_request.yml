@@ -1,0 +1,44 @@
+name: Задача или идея
+description: Новая функция, улучшение или технический долг
+labels: ["type:feat"]
+body:
+  - type: markdown
+    attributes:
+      value: "Объём проекта защищён сознательно. Если функции нет в `enot-docs/docs/spec.md`, начните с обсуждения необходимости."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options: ["client", "backend", "media", "infra", "community-server", "admin"]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: "Какую задачу пользователя или команды это решает."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Как понять, что готово
+      placeholder: "Критерии приёмки списком."
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Пункт ТЗ
+      placeholder: "Например: §3.3 или «нет в ТЗ, нужно обсуждение»"
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Этап
+      options: ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "не определён"]
