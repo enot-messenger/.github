@@ -22,6 +22,13 @@ on:
       service:
         type: string
         required: true
+      # Одноразовый сервис compose, который нужно выполнить на новом образе
+      # до подмены целевого сервиса (например core-migrate для наката схемы).
+      # Пусто — шаг пропускается. Ненулевой код возврата останавливает деплой,
+      # работающий контейнер остаётся на прежнем образе.
+      pre-deploy-service:
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -76,6 +83,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           IMAGE: ${{ vars.REGISTRY }}/${{ inputs.image-name }}:${{ github.sha }}
           SERVICE: ${{ inputs.service }}
+          PRE_SERVICE: ${{ inputs.pre-deploy-service }}
           COMPOSE_FILE: ${{ inputs.compose-file }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
@@ -86,6 +94,13 @@ jobs:
           # ${SERVICE^^} давал CORE-GATEWAY_IMAGE, а export с дефисом падает.
           IMAGE_VAR="$(printf '%s' "$SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE"
           echo "Переменная образа: $IMAGE_VAR"
+          # Одноразовый сервис берёт образ из своей переменной по тому же правилу:
+          # core-migrate -> CORE_MIGRATE_IMAGE.
+          PRE_IMAGE_VAR="NONE"
+          if [ -n "$PRE_SERVICE" ]; then
+            PRE_IMAGE_VAR="$(printf '%s' "$PRE_SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE"
+            echo "Перед деплоем выполняется: $PRE_SERVICE ($PRE_IMAGE_VAR)"
+          fi
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
@@ -99,6 +114,15 @@ jobs:
             echo "\$previous" > ".previous-$SERVICE" || true
             export $IMAGE_VAR="$IMAGE"
             docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
+            # Одноразовый шаг до подмены сервиса: миграции применяются на новом
+            # образе, пока работает прежний контейнер. Падение прерывает деплой
+            # из-за set -e, и подмены не происходит.
+            if [ -n "$PRE_SERVICE" ]; then
+              export $PRE_IMAGE_VAR="$IMAGE"
+              echo "Выполняем $PRE_SERVICE на $IMAGE"
+              docker compose -f "$COMPOSE_FILE" run --rm "$PRE_SERVICE"
+              echo "$PRE_SERVICE отработал успешно"
+            fi
             docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE"
             # Health-check: ждём healthy до 90 секунд
             for i in \$(seq 1 30); do
