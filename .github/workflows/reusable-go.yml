@@ -9,6 +9,12 @@ on:
       working-directory:
         type: string
         default: "."
+      postgres-version:
+        description: >-
+          Версия PostgreSQL для тестов, работающих против живой базы.
+          Пустое значение — база не поднимается, такие тесты пропускаются.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -37,6 +43,30 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
           cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+
+      # Служба `services:` не умеет включаться по условию, поэтому база
+      # поднимается шагом: без postgres-version шаг не выполняется вовсе.
+      - name: Start PostgreSQL
+        if: steps.detect.outputs.found == 'true' && inputs.postgres-version != ''
+        run: |
+          docker run -d --name enot-test-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=enot_test \
+            -p 5432:5432 \
+            "postgres:${{ inputs.postgres-version }}-alpine"
+
+          for _ in $(seq 1 30); do
+            if docker exec enot-test-postgres pg_isready -U postgres -d enot_test >/dev/null 2>&1; then
+              echo "ENOT_TEST_DB_DSN=postgres://postgres:postgres@127.0.0.1:5432/enot_test?sslmode=disable" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::PostgreSQL не поднялся за отведённое время"
+          docker logs enot-test-postgres || true
+          exit 1
 
       - name: Verify formatting
         if: steps.detect.outputs.found == 'true'
