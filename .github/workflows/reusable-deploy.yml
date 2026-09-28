@@ -127,6 +127,12 @@ jobs:
               docker compose -f "$COMPOSE_FILE" run --rm -T "$PRE_SERVICE" </dev/null
               echo "$PRE_SERVICE отработал успешно"
             fi
+            # Зависимости сервиса поднимаются отдельной командой: --no-deps
+            # ниже их не запускает, а сервис, которому нужны база, Redis или
+            # шина, не стартует и уходит в unhealthy. --no-recreate не трогает
+            # уже работающие контейнеры, включая прежний контейнер сервиса —
+            # его подменяет следующая команда.
+            docker compose -f "$COMPOSE_FILE" up -d --no-recreate "$SERVICE" </dev/null
             docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE" </dev/null
             # Явно убеждаемся, что контейнер действительно поехал на новом образе:
             # тихая неподмена уже один раз прошла мимо зелёного деплоя.
@@ -144,6 +150,12 @@ jobs:
               sleep 3
             done
             echo "Health-check не пройден, откатываемся"
+            # Журнал контейнера до откатa: иначе причина падения уезжает вместе
+            # с пересозданным контейнером, и деплой сообщает только сам факт.
+            echo "--- Состояние и журнал $SERVICE ---"
+            docker compose -f "$COMPOSE_FILE" ps "$SERVICE" </dev/null || true
+            docker compose -f "$COMPOSE_FILE" logs --tail 50 --no-color "$SERVICE" </dev/null || true
+            echo "--- Конец журнала ---"
             if [ -n "\$previous" ]; then
               export $IMAGE_VAR="\$previous"
               docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE" </dev/null
