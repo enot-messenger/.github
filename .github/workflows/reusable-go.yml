@@ -15,6 +15,12 @@ on:
           Пустое значение — база не поднимается, такие тесты пропускаются.
         type: string
         default: ""
+      redis-version:
+        description: >-
+          Версия Redis для тестов, работающих против живого Redis.
+          Пустое значение — Redis не поднимается, такие тесты пропускаются.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -66,6 +72,27 @@ jobs:
 
           echo "::error::PostgreSQL не поднялся за отведённое время"
           docker logs enot-test-postgres || true
+          exit 1
+
+      # Тот же приём, что и с базой: служба по условию не включается,
+      # поэтому Redis поднимается шагом.
+      - name: Start Redis
+        if: steps.detect.outputs.found == 'true' && inputs.redis-version != ''
+        run: |
+          docker run -d --name enot-test-redis \
+            -p 6379:6379 \
+            "redis:${{ inputs.redis-version }}-alpine"
+
+          for _ in $(seq 1 30); do
+            if docker exec enot-test-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+              echo "ENOT_TEST_REDIS_ADDR=127.0.0.1:6379" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::Redis не поднялся за отведённое время"
+          docker logs enot-test-redis || true
           exit 1
 
       - name: Verify formatting
