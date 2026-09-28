@@ -105,6 +105,9 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Скрипт уходит на сервер через stdin, поэтому каждая удалённая команда,
+          # которая сама читает stdin, съела бы остаток скрипта и деплой молча
+          # оборвался бы с кодом 0. Всем таким командам закрываем ввод: </dev/null.
           ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
             set -euo pipefail
             cd "$DEPLOY_PATH"
@@ -113,17 +116,26 @@ jobs:
             previous="\$(docker compose -f "$COMPOSE_FILE" ps --format '{{ .Image }}' "$SERVICE" | head -n 1 || true)"
             echo "\$previous" > ".previous-$SERVICE" || true
             export $IMAGE_VAR="$IMAGE"
-            docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
+            docker compose -f "$COMPOSE_FILE" pull "$SERVICE" </dev/null
             # Одноразовый шаг до подмены сервиса: миграции применяются на новом
             # образе, пока работает прежний контейнер. Падение прерывает деплой
             # из-за set -e, и подмены не происходит.
+            # -T и </dev/null обязательны: без них run забирает stdin сессии.
             if [ -n "$PRE_SERVICE" ]; then
               export $PRE_IMAGE_VAR="$IMAGE"
               echo "Выполняем $PRE_SERVICE на $IMAGE"
-              docker compose -f "$COMPOSE_FILE" run --rm "$PRE_SERVICE"
+              docker compose -f "$COMPOSE_FILE" run --rm -T "$PRE_SERVICE" </dev/null
               echo "$PRE_SERVICE отработал успешно"
             fi
-            docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE"
+            docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE" </dev/null
+            # Явно убеждаемся, что контейнер действительно поехал на новом образе:
+            # тихая неподмена уже один раз прошла мимо зелёного деплоя.
+            current="\$(docker compose -f "$COMPOSE_FILE" ps --format '{{ .Image }}' "$SERVICE" | head -n 1 || true)"
+            echo "Контейнер работает на образе: \$current"
+            if [ "\$current" != "$IMAGE" ]; then
+              echo "Образ не подменился: ожидали $IMAGE"
+              exit 1
+            fi
             # Health-check: ждём healthy до 90 секунд
             for i in \$(seq 1 30); do
               status="\$(docker inspect --format '{{ .State.Health.Status }}' "\$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE")" 2>/dev/null || echo starting)"
@@ -134,7 +146,7 @@ jobs:
             echo "Health-check не пройден, откатываемся"
             if [ -n "\$previous" ]; then
               export $IMAGE_VAR="\$previous"
-              docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE"
+              docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE" </dev/null
               echo "Откат на \$previous выполнен"
             else
               echo "Предыдущий образ неизвестен, автоматический откат невозможен"
