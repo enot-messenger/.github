@@ -1,0 +1,49 @@
+name: Reusable shell checks
+
+# Проверки shell-скриптов: синтаксис и shellcheck. Скрипт настройки площадки
+# запускается на живом сервере от root, поэтому опечатку в нём дешевле
+# поймать здесь, чем на VPS.
+
+on:
+  workflow_call:
+    inputs:
+      severity:
+        description: >-
+          Минимальная строгость shellcheck: error, warning, info или style.
+        type: string
+        default: "warning"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      SEVERITY: ${{ inputs.severity }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Скрипты ищутся в индексе git: проверка не зависит от того, где они
+      # лежат, и не заходит в каталоги сборки. shellcheck на образе
+      # ubuntu-latest уже установлен, отдельного action не нужно.
+      - name: Проверить скрипты
+        run: |
+          set -euo pipefail
+
+          mapfile -t files < <(git ls-files '*.sh' '*.bash')
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::Скриптов в репозитории нет — проверки пропущены"
+            exit 0
+          fi
+
+          printf 'Проверяем:\n'
+          printf '  %s\n' "${files[@]}"
+
+          for file in "${files[@]}"; do
+            bash -n "$file"
+          done
+
+          shellcheck --version
+          shellcheck --severity="$SEVERITY" "${files[@]}"
