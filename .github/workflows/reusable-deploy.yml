@@ -40,10 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Входы передаются через окружение, а не подстановкой в текст скрипта:
+      # так значение не может стать частью команды оболочки.
       - name: Detect Dockerfile
         id: detect
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
         run: |
-          if [ -f "${{ inputs.dockerfile }}" ]; then
+          if [ -f "$DOCKERFILE" ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"

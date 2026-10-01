@@ -25,5 +25,7 @@ jobs:
   go:
     uses: enot-messenger/.github/.github/workflows/reusable-go.yml@main
     with:
-      go-version: "1.23"
+      go-version: "1.26"
 ```
+
+`reusable-go.yml` выбирает версию golangci-lint по конфигу репозитория: `.golangci.yml` с `version: "2"` проверяется golangci-lint v2 (обязателен для Go 1.25+), конфиг без этой строки — прежним v1.

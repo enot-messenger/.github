@@ -44,6 +44,18 @@ jobs:
             echo "::notice::go.mod ещё нет — проверки пропущены"
           fi
 
+          # Конфиг golangci-lint v2 начинается с `version: "2"`. Такой конфиг
+          # и Go 1.25+ требуют линтер второй версии: v1 собран на Go 1.24 и
+          # не разбирает стандартную библиотеку новых версий. Репозитории со
+          # старым конфигом проверяются, как раньше, линтером v1.
+          lint_v2=false
+          for config in .golangci.yml .golangci.yaml; do
+            if [ -f "$config" ] && grep -Eq '^version:[[:space:]]*"?2"?[[:space:]]*$' "$config"; then
+              lint_v2=true
+            fi
+          done
+          echo "lint-v2=$lint_v2" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         if: steps.detect.outputs.found == 'true'
         with:
@@ -119,7 +131,16 @@ jobs:
         run: go test ./... -race -count=1 -coverprofile=coverage.out
 
       - name: Lint
-        if: steps.detect.outputs.found == 'true'
+        if: steps.detect.outputs.found == 'true' && steps.detect.outputs.lint-v2 != 'true'
         uses: golangci/golangci-lint-action@v6
         with:
+          working-directory: ${{ inputs.working-directory }}
+
+      # Версия линтера закреплена: новый выпуск может включить проверки,
+      # которые уронят CI без изменений в коде. Обновляется отдельным PR.
+      - name: Lint (golangci-lint v2)
+        if: steps.detect.outputs.found == 'true' && steps.detect.outputs.lint-v2 == 'true'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
           working-directory: ${{ inputs.working-directory }}
