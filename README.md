@@ -29,3 +29,5 @@ jobs:
 ```
 
 `reusable-go.yml` выбирает версию golangci-lint по конфигу репозитория: `.golangci.yml` с `version: "2"` проверяется golangci-lint v2 (обязателен для Go 1.25+), конфиг без этой строки — прежним v1.
+
+Тесты против живых зависимостей включаются входами `postgres-version`, `redis-version`, `nats-version` и `minio-version`: каждый поднимает контейнер шагом и отдаёт тестам адрес в переменных `ENOT_TEST_*` (`ENOT_TEST_DB_DSN`, `ENOT_TEST_REDIS_ADDR`, `ENOT_TEST_NATS_URL`, `ENOT_TEST_S3_ENDPOINT` с `ENOT_TEST_S3_ACCESS_KEY` и `ENOT_TEST_S3_SECRET_KEY`). Пустой вход — контейнер не поднимается, такие тесты пропускаются. У `minio-version` значение — полный тег образа `minio/minio` вида `RELEASE.2025-04-22T22-12-26Z`: короткого тега у MinIO нет.
