@@ -29,9 +29,11 @@ on:
         default: ""
       minio-version:
         description: >-
-          Тег образа minio/minio (например, RELEASE.2025-04-22T22-12-26Z) для
-          тестов, работающих против живого S3-совместимого хранилища.
-          Пустое значение — хранилище не поднимается, такие тесты пропускаются.
+          Тег выпуска MinIO (например, RELEASE.2025-04-22T22-12-26Z) для
+          тестов, работающих против живого S3-совместимого хранилища. Сервер
+          собирается из исходников этого тега: образ minio/minio с Docker Hub
+          удалён. Пустое значение — хранилище не поднимается, такие тесты
+          пропускаются.
         type: string
         default: ""
 
@@ -142,17 +144,36 @@ jobs:
           docker logs enot-test-nats || true
           exit 1
 
-      # Тот же приём, что с базой, Redis и NATS. Учётные данные — только для
-      # одноразового контейнера CI. Бакеты тесты заводят сами: каждому тесту
-      # свой, чтобы параллельные прогоны не делили объекты.
+      # MinIO больше не публикует сборки, а репозиторий minio/minio на
+      # Docker Hub удалён целиком, поэтому сервер собирается из исходников
+      # закреплённого тега через прокси модулей Go. Сборка кэшируется по тегу
+      # и версии Go: повторные прогоны берут готовый бинарник. Учётные
+      # данные — только для одноразового сервера CI. Бакеты тесты заводят
+      # сами: каждому тесту свой, чтобы параллельные прогоны не делили объекты.
+      - name: Cache MinIO server
+        id: minio-cache
+        if: steps.detect.outputs.found == 'true' && inputs.minio-version != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/enot-minio
+          key: minio-${{ runner.os }}-${{ inputs.minio-version }}-go${{ inputs.go-version }}
+
+      - name: Build MinIO server
+        if: steps.detect.outputs.found == 'true' && inputs.minio-version != '' && steps.minio-cache.outputs.cache-hit != 'true'
+        env:
+          MINIO_VERSION: ${{ inputs.minio-version }}
+        run: |
+          # Сборка идёт вне модуля репозитория: `go install` с версией не
+          # читает его go.mod и не трогает go.sum.
+          GOBIN="$HOME/.cache/enot-minio" go install "github.com/minio/minio@${MINIO_VERSION}"
+
       - name: Start MinIO
         if: steps.detect.outputs.found == 'true' && inputs.minio-version != ''
         run: |
-          docker run -d --name enot-test-minio \
-            -e MINIO_ROOT_USER=enot-test \
-            -e MINIO_ROOT_PASSWORD=enot-test-secret \
-            -p 9000:9000 \
-            "minio/minio:${{ inputs.minio-version }}" server /data
+          mkdir -p "$RUNNER_TEMP/minio-data"
+          MINIO_ROOT_USER=enot-test MINIO_ROOT_PASSWORD=enot-test-secret \
+            nohup "$HOME/.cache/enot-minio/minio" server "$RUNNER_TEMP/minio-data" \
+            --address 127.0.0.1:9000 > "$RUNNER_TEMP/minio.log" 2>&1 &
 
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
@@ -167,7 +188,7 @@ jobs:
           done
 
           echo "::error::MinIO не поднялся за отведённое время"
-          docker logs enot-test-minio || true
+          cat "$RUNNER_TEMP/minio.log" || true
           exit 1
 
       - name: Verify formatting
