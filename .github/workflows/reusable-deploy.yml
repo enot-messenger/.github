@@ -137,12 +137,19 @@ jobs:
             # уже работающие контейнеры, включая прежний контейнер сервиса —
             # его подменяет следующая команда.
             docker compose -f "$COMPOSE_FILE" up -d --no-recreate "$SERVICE" </dev/null
-            docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE" </dev/null
+            # --force-recreate обязателен. Повторный запуск workflow на том же
+            # коммите пересобирает образ под тем же тегом (sha коммита), но с
+            # другим ID. Строка image в compose не меняется, и без флага compose
+            # оставляет контейнер на прежнем образе («Running»).
+            docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE" </dev/null
             # Явно убеждаемся, что контейнер действительно поехал на новом образе:
             # тихая неподмена уже один раз прошла мимо зелёного деплоя.
-            current="\$(docker compose -f "$COMPOSE_FILE" ps --format '{{ .Image }}' "$SERVICE" | head -n 1 || true)"
-            echo "Контейнер работает на образе: \$current"
-            if [ "\$current" != "$IMAGE" ]; then
+            # Сверяются ID образов, а не имена: если тег переехал на другой образ,
+            # ps показывает вместо имени ID, а одинаковое имя не значит один образ.
+            want="\$(docker image inspect --format '{{ .Id }}' "$IMAGE")"
+            current="\$(docker inspect --format '{{ .Image }}' "\$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE" | head -n 1)" 2>/dev/null || true)"
+            echo "Контейнер работает на образе: \$current (ожидали $IMAGE = \$want)"
+            if [ -z "\$current" ] || [ "\$current" != "\$want" ]; then
               echo "Образ не подменился: ожидали $IMAGE"
               exit 1
             fi
