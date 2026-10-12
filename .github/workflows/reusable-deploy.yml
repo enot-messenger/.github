@@ -36,7 +36,10 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Сервер задачи — из переменной репозитория, который вызвал workflow:
+    # CI_RUNNER=enot отправляет задачу на собственный сервер CI, без
+    # переменной — на серверы GitHub (enot-infra/docs/runner-setup.md, §3).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -106,13 +109,17 @@ jobs:
             echo "Перед деплоем выполняется: $PRE_SERVICE ($PRE_IMAGE_VAR)"
           fi
           mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          # Ключ — во временном каталоге задачи, а не в ~/.ssh: на собственном
+          # сервере CI экземпляры делят домашний каталог, и шаг «Remove key»
+          # одного деплоя удалил бы ключ у соседнего посреди выката.
+          DEPLOY_KEY_FILE="$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$DEPLOY_KEY_FILE"
+          chmod 600 "$DEPLOY_KEY_FILE"
           ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           # Скрипт уходит на сервер через stdin, поэтому каждая удалённая команда,
           # которая сама читает stdin, съела бы остаток скрипта и деплой молча
           # оборвался бы с кодом 0. Всем таким командам закрываем ввод: </dev/null.
-          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
+          ssh -i "$DEPLOY_KEY_FILE" -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
             set -euo pipefail
             cd "$DEPLOY_PATH"
             # Сохраняем текущий тег для отката
@@ -179,4 +186,4 @@ jobs:
 
       - name: Remove key
         if: always()
-        run: rm -f ~/.ssh/deploy_key
+        run: rm -f "$RUNNER_TEMP/deploy_key"

@@ -42,7 +42,11 @@ permissions:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Тесты Go поднимают контейнеры с постоянными именами и портами, поэтому
+    # на собственном сервере CI идут только на экземпляре с меткой enot-go и
+    # по одной: CI_RUNNER_GO=enot-go, без переменной — серверы GitHub
+    # (enot-infra/docs/runner-setup.md, §2–§3).
+    runs-on: ${{ vars.CI_RUNNER_GO || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}

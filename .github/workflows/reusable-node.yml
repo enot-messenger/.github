@@ -15,7 +15,10 @@ permissions:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Сервер задачи — из переменной репозитория, который вызвал workflow:
+    # CI_RUNNER=enot отправляет задачу на собственный сервер CI, без
+    # переменной — на серверы GitHub (enot-infra/docs/runner-setup.md, §3).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
