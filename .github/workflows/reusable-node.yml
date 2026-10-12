@@ -32,6 +32,15 @@ jobs:
             echo "::notice::package.json ещё нет — проверки пропущены"
           fi
 
+      # Node ставит только setup-node: на собственном сервере CI его нет,
+      # а corepack входит в Node. Поэтому порядок такой: Node, затем corepack
+      # (появляется pnpm), затем повторный setup-node — он уже не скачивает
+      # Node, а только включает кеш, которому нужен pnpm.
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.found == 'true'
+        with:
+          node-version: ${{ inputs.node-version }}
+
       - name: Enable corepack
         if: steps.detect.outputs.found == 'true' && inputs.package-manager == 'pnpm'
         run: corepack enable
