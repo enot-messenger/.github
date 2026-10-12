@@ -154,19 +154,29 @@ jobs:
       # и версии Go: повторные прогоны берут готовый бинарник. Учётные
       # данные — только для одноразового сервера CI. Бакеты тесты заводят
       # сами: каждому тесту свой, чтобы параллельные прогоны не делили объекты.
+      #
+      # actions/cache хранит путь относительно рабочего каталога задачи, а у
+      # собственного сервера CI он на уровень глубже, чем на серверах GitHub
+      # (actions-runner-go/_work/...): кэш, сохранённый там, распаковывается
+      # мимо ~/.cache/enot-minio. Поэтому в ключе — runner.environment, а
+      # сборка решает по наличию бинарника, а не по cache-hit.
       - name: Cache MinIO server
         id: minio-cache
         if: steps.detect.outputs.found == 'true' && inputs.minio-version != ''
         uses: actions/cache@v4
         with:
           path: ~/.cache/enot-minio
-          key: minio-${{ runner.os }}-${{ inputs.minio-version }}-go${{ inputs.go-version }}
+          key: minio-${{ runner.os }}-${{ runner.environment }}-${{ inputs.minio-version }}-go${{ inputs.go-version }}
 
       - name: Build MinIO server
-        if: steps.detect.outputs.found == 'true' && inputs.minio-version != '' && steps.minio-cache.outputs.cache-hit != 'true'
+        if: steps.detect.outputs.found == 'true' && inputs.minio-version != ''
         env:
           MINIO_VERSION: ${{ inputs.minio-version }}
         run: |
+          if [ -x "$HOME/.cache/enot-minio/minio" ]; then
+            echo "MinIO уже собран: $HOME/.cache/enot-minio/minio"
+            exit 0
+          fi
           # Сборка идёт вне модуля репозитория: `go install` с версией не
           # читает его go.mod и не трогает go.sum.
           GOBIN="$HOME/.cache/enot-minio" go install "github.com/minio/minio@${MINIO_VERSION}"
