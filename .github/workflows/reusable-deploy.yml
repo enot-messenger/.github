@@ -108,18 +108,27 @@ jobs:
             PRE_IMAGE_VAR="$(printf '%s' "$PRE_SERVICE" | tr '[:lower:]-' '[:upper:]_')_IMAGE"
             echo "Перед деплоем выполняется: $PRE_SERVICE ($PRE_IMAGE_VAR)"
           fi
-          mkdir -p ~/.ssh
-          # Ключ — во временном каталоге задачи, а не в ~/.ssh: на собственном
-          # сервере CI экземпляры делят домашний каталог, и шаг «Remove key»
-          # одного деплоя удалил бы ключ у соседнего посреди выката.
+          # Ключ и known_hosts — во временном каталоге задачи, а не в ~/.ssh: на
+          # собственном сервере CI экземпляры делят домашний каталог, и шаг
+          # «Remove key» одного деплоя удалил бы ключ у соседнего посреди выката.
           DEPLOY_KEY_FILE="$RUNNER_TEMP/deploy_key"
+          KNOWN_HOSTS_FILE="$RUNNER_TEMP/deploy_known_hosts"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$DEPLOY_KEY_FILE"
           chmod 600 "$DEPLOY_KEY_FILE"
-          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Ключ хоста площадки. Ошибку ssh-keyscan не глушим: раньше при
+          # недоступном SSH шаг падал с кодом 1 без единого слова. Один тип
+          # ключа — одно соединение: у сервера CI постоянный IP, и лишние
+          # обрывы до входа fail2ban площадки считает попытками перебора.
+          if ! ssh-keyscan -T 15 -t ed25519 -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" > "$KNOWN_HOSTS_FILE" \
+            || [ ! -s "$KNOWN_HOSTS_FILE" ]; then
+            echo "::error::SSH площадки $DEPLOY_HOST:${DEPLOY_PORT:-22} не отвечает с этого сервера CI. Частая причина — fail2ban площадки забанил IP сервера CI (enot-infra/docs/runner-setup.md, §6)"
+            exit 1
+          fi
           # Скрипт уходит на сервер через stdin, поэтому каждая удалённая команда,
           # которая сама читает stdin, съела бы остаток скрипта и деплой молча
           # оборвался бы с кодом 0. Всем таким командам закрываем ввод: </dev/null.
-          ssh -i "$DEPLOY_KEY_FILE" -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
+          ssh -i "$DEPLOY_KEY_FILE" -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" -o StrictHostKeyChecking=yes \
+            -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" bash -se <<REMOTE
             set -euo pipefail
             cd "$DEPLOY_PATH"
             # Сохраняем текущий тег для отката
@@ -186,4 +195,4 @@ jobs:
 
       - name: Remove key
         if: always()
-        run: rm -f "$RUNNER_TEMP/deploy_key"
+        run: rm -f "$RUNNER_TEMP/deploy_key" "$RUNNER_TEMP/deploy_known_hosts"
