@@ -18,7 +18,10 @@ permissions:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Сервер задачи — из переменной репозитория, который вызвал workflow:
+    # CI_RUNNER=enot отправляет задачу на собственный сервер CI, без
+    # переменной — на серверы GitHub (enot-infra/docs/runner-setup.md, §3).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     env:
       SEVERITY: ${{ inputs.severity }}
     steps:
@@ -26,7 +29,8 @@ jobs:
 
       # Скрипты ищутся в индексе git: проверка не зависит от того, где они
       # лежат, и не заходит в каталоги сборки. shellcheck на образе
-      # ubuntu-latest уже установлен, отдельного action не нужно.
+      # ubuntu-latest уже установлен, на собственном сервере CI его ставит
+      # enot-infra/scripts/bootstrap-runner.sh — отдельного action не нужно.
       - name: Проверить скрипты
         run: |
           set -euo pipefail
