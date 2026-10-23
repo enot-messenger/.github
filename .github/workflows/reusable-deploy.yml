@@ -29,6 +29,11 @@ on:
       pre-deploy-service:
         type: string
         default: ""
+      # Аргументы сборки образа, по одному `ИМЯ=значение` на строку, как у
+      # build-args в docker/build-push-action. Пусто — без аргументов.
+      build-args:
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -73,6 +78,7 @@ jobs:
         with:
           context: .
           file: ${{ inputs.dockerfile }}
+          build-args: ${{ inputs.build-args }}
           push: true
           tags: |
             ${{ vars.REGISTRY }}/${{ inputs.image-name }}:${{ github.sha }}
