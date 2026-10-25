@@ -1,9 +1,8 @@
 #!/usr/bin/env sh
 # Запрещает прямой push в main: изменения идут только через ветку и pull request.
 #
-# Включается один раз в каждом клоне:
+# Включается один раз в каждом клоне (право на исполнение хранится в git):
 #   git config core.hooksPath .githooks
-#   chmod +x .githooks/pre-push
 #
 # Обойти осознанно (например, при восстановлении после аварии):
 #   git push --no-verify

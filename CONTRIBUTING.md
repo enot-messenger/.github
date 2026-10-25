@@ -11,8 +11,9 @@
 
 ```bash
 git config core.hooksPath .githooks
-chmod +x .githooks/pre-push
 ```
+
+Право на исполнение хука хранится в git; в старом клоне после `git pull` его ставить руками не нужно.
 
 ## Ветки и коммиты
 
