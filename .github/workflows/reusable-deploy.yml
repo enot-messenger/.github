@@ -34,6 +34,21 @@ on:
       build-args:
         type: string
         default: ""
+      # Имя файла в $DEPLOY_PATH/secrets/, куда деплой до подмены сервиса
+      # пишет секрет SECRET_FILE (enot-docs ADR-0022). Пусто — шаг пропускается.
+      # Секрет не задан — файл не меняется, отсутствующий создаётся пустым,
+      # чтобы secret compose было что монтировать.
+      secret-file:
+        type: string
+        default: ""
+    # Объявлены необязательными: вызов с `secrets: inherit` работает как
+    # раньше, а явная передача позволяет положить в SECRET_FILE секрет
+    # репозитория под другим именем (LICENSE_SIGNING_KEY в enot-backend).
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: false
+      SECRET_FILE:
+        required: false
 
 permissions:
   contents: read
@@ -98,10 +113,18 @@ jobs:
           SERVICE: ${{ inputs.service }}
           PRE_SERVICE: ${{ inputs.pre-deploy-service }}
           COMPOSE_FILE: ${{ inputs.compose-file }}
+          SECRET_FILE_NAME: ${{ inputs.secret-file }}
+          SECRET_FILE: ${{ secrets.SECRET_FILE }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "::notice::Переменные DEPLOY_* не заданы — деплой пропущен"
             exit 0
+          fi
+          # Имя файла попадает в путь на сервере: только простое имя, без
+          # каталогов и скрытых файлов.
+          if [ -n "$SECRET_FILE_NAME" ] && ! printf '%s' "$SECRET_FILE_NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+            echo "::error::Недопустимое имя secret-file: $SECRET_FILE_NAME"
+            exit 1
           fi
           # Имя переменной образа для compose: core-gateway -> CORE_GATEWAY_IMAGE.
           # ${SERVICE^^} давал CORE-GATEWAY_IMAGE, а export с дефисом падает.
@@ -129,6 +152,31 @@ jobs:
             || [ ! -s "$KNOWN_HOSTS_FILE" ]; then
             echo "::error::SSH площадки $DEPLOY_HOST:${DEPLOY_PORT:-22} не отвечает с этого сервера CI. Частая причина — fail2ban площадки забанил IP сервера CI (enot-infra/docs/runner-setup.md, §6)"
             exit 1
+          fi
+          # Файл-секрет — отдельным соединением до подмены сервиса. Значение идёт
+          # через stdin, а не в аргументах (их видно в ps на сервере) и не в
+          # тексте деплойного скрипта ниже. Запись через временный файл и mv:
+          # контейнер никогда не увидит полузаписанный ключ. Ошибка здесь
+          # останавливает деплой до pull, работающий контейнер не трогается.
+          if [ -n "$SECRET_FILE_NAME" ]; then
+            if [ -n "$SECRET_FILE" ]; then
+              echo "Файл-секрет: обновляем secrets/$SECRET_FILE_NAME"
+            else
+              echo "Файл-секрет: секрет не передан, secrets/$SECRET_FILE_NAME не меняется"
+            fi
+            # printf — встроенная команда, значение не попадает в список процессов.
+            { if [ -n "$SECRET_FILE" ]; then printf '%s\n' "$SECRET_FILE"; fi; } \
+              | ssh -i "$DEPLOY_KEY_FILE" -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" -o StrictHostKeyChecking=yes \
+                -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+                "set -eu; umask 077; d='$DEPLOY_PATH/secrets'; f=\"\$d/$SECRET_FILE_NAME\"
+                mkdir -p \"\$d\"; chmod 700 \"\$d\"
+                tmp=\"\$(mktemp \"\$d/.tmp.XXXXXX\")\"
+                cat > \"\$tmp\"
+                if [ -s \"\$tmp\" ]; then
+                  chmod 440 \"\$tmp\"; mv -f \"\$tmp\" \"\$f\"; echo 'Файл-секрет записан'
+                else
+                  rm -f \"\$tmp\"; [ -e \"\$f\" ] || { : > \"\$f\"; chmod 440 \"\$f\"; echo 'Создан пустой файл-секрет'; }
+                fi"
           fi
           # Скрипт уходит на сервер через stdin, поэтому каждая удалённая команда,
           # которая сама читает stdin, съела бы остаток скрипта и деплой молча
