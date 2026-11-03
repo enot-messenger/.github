@@ -75,10 +75,17 @@ jobs:
           done
           echo "lint-v2=$lint_v2" >> "$GITHUB_OUTPUT"
 
+      # Кэш setup-go — только на серверах GitHub. На сервере CI экземпляры
+      # делят домашний каталог, а с ним ~/.cache/go-build и ~/go/pkg/mod:
+      # распаковка архива кэша в одной задаче удаляет и пишет заново файлы,
+      # которые в этот момент читает сборка соседней, и та падает с
+      # «no such file or directory». Свой кэш у сервера и так сохраняется
+      # между задачами.
       - uses: actions/setup-go@v5
         if: steps.detect.outputs.found == 'true'
         with:
           go-version: ${{ inputs.go-version }}
+          cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: ${{ inputs.working-directory }}/go.sum
 
       # Служба `services:` не умеет включаться по условию, поэтому база
